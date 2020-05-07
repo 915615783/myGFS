@@ -346,7 +346,7 @@ def login_window():
     label = tk.Label(login, text='master ip')
     label.pack()
     ip_en = tk.Entry(login)
-    ip_en.insert(0, '121.199.45.80')
+
     ip_en.pack()
 
     label = tk.Label(login, text='master port')
