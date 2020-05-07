@@ -376,6 +376,9 @@ def login_window():
 def main():
     my_name, master_address = login_window()
     try:
+        if '_' in my_name or '/' in my_name:
+            raise Exception('用户名不能有下划线或者斜杠')
+        
         client = Client(my_name, master_address)
         client.run_gui()
     except Exception as e:

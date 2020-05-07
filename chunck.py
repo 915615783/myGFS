@@ -3,6 +3,27 @@ import socket
 import os
 import shutil
 import argparse
+import threading
+
+def thread_wraper(f):
+    def w_f(self, sock, request):
+        key = request.get('key')
+        assert key != None
+        user_name = key.split('_')[0]
+        t = threading.Thread(target=f, args=(self, sock, request))
+        t.setDaemon(True)
+        self.user2thread[user_name] = t
+        print('new thread serving user %s.'%user_name)
+        t.start()
+    return w_f
+
+def sock_close_wraper(f):
+    def w_f(self, sock, request):
+        try:
+            f(self, sock, request)
+        except Exception as e:
+            print(e, 'Error happens in functioin', f.__name__)
+    return w_f
 
 class Chunck():
     def __init__(self, address, buffer_dir, save_dir, master_address):
@@ -14,6 +35,7 @@ class Chunck():
         if not os.path.isdir(save_dir):
             os.mkdir(save_dir)
         self.key2info = {}
+        self.user2thread = {}
 
         self.master_address = master_address
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -31,6 +53,15 @@ class Chunck():
             try:
                 req_sock, req_address = self.sock.accept()
                 request = network.recv_dict(req_sock, timeout=20)
+                
+                # 检查当前用户是否有活着的线程
+                key = request.get('key')
+                assert key != None
+                user_name = key.split('_')[0]
+                if self.user2thread.get(user_name) != None:
+                    if self.user2thread.get(user_name).isAlive():
+                        raise Exception('用户%s已经有线程在运行，又来一个请求我只不客气了，呵呵'%user_name)
+
                 print(req_address, request)
                 if request.get('command') == 'get':
                     self.get(req_sock, request)
@@ -39,12 +70,15 @@ class Chunck():
                 elif request.get('command') == 'delete':
                     self.delete(req_sock, request)
                 else:
-                    response = {'response':'unvalid_command'}
+                    # response = {'response':'unvalid_command'}
+                    raise Exception('unvalid command')
 
             except Exception as e:
                 print(e, req_address)
-            req_sock.close()
+                req_sock.close()
 
+    @thread_wraper
+    @sock_close_wraper
     def delete(self, sock, request):
         print('deleteing')
         key = request.get('key')
@@ -56,6 +90,8 @@ class Chunck():
             self.key2info.pop(key)
         network.send_dict(sock, {'response': 'deleted'})
 
+    @thread_wraper
+    @sock_close_wraper
     def push(self, sock, request):
         key = request.get('key')
         network.send_dict(sock, {'response':'ready'})
@@ -101,6 +137,8 @@ class Chunck():
     def check_with_master(self):
         pass
 
+    @thread_wraper
+    @sock_close_wraper
     def get(self, sock, request_dict):
         key = request_dict['key']
         num_blocks = request_dict['num_blocks']
@@ -133,10 +171,10 @@ class Chunck():
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--ip', type=str, help='Chunck will listen this ip')
-    parser.add_argument('--port', type=int, help='Chunck will listen this tcp port')
-    parser.add_argument('--master_ip', type=str, help='master ip')
-    parser.add_argument('--master_port', type=int, help='master port')
+    parser.add_argument('--ip', type=str, default='127.0.0.1', help='Chunck will listen this ip')
+    parser.add_argument('--port', type=int, default=14488, help='Chunck will listen this tcp port')
+    parser.add_argument('--master_ip', type=str, default='127.0.0.1', help='master ip')
+    parser.add_argument('--master_port', type=int, default=14477, help='master port')
     opt = parser.parse_args()
     address = (opt.ip, opt.port)
     master_address = (opt.master_ip, opt.master_port)
