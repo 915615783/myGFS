@@ -46,11 +46,8 @@ class Chunck():
         self.sock.bind(('0.0.0.0', self.address[1]))
         self.sock.listen()
 
-        # heart beat用来确认服务器没有挂掉，也用来删除master没有了，但是chunck还保存着的文件
-        # 如果从缓冲区复制到存储区，到客户端想master报到前，发生了heart beat，很可能会把刚上传的文件给删了
-        # 因此采取一个策略：把多次heart beat master返回的文件信息存起来，检查如果多次heart beat都不存在的文件，才把它删掉
-        self.delete_check_time = 2  # 多少次
-        self.heart_beat_time = 10
+        self.delete_check_time = 10  
+        self.heart_beat_time = 20
 
     def heart_beat(self):
         print('Heart beat thread started.')

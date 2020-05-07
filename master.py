@@ -11,9 +11,9 @@ class Master():
         self.key2info = {}
         self.chunck_servers = []
         self.chunck_last_heart_beat_time = {}
-        self.max_heart_beat_time = 20
+        self.max_heart_beat_time = 60
         self.heart_beat_lock = threading.Lock()
-        self.check_expire_time = 5
+        self.check_expire_time = 20
         self.m = m
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.bind(address)
