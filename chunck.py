@@ -4,6 +4,7 @@ import os
 import shutil
 import argparse
 import threading
+import time
 
 def thread_wraper(f):
     def w_f(self, sock, request):
@@ -29,11 +30,14 @@ class Chunck():
     def __init__(self, address, buffer_dir, save_dir, master_address):
         self.address = address
         self.buffer_dir = buffer_dir
-        if not os.path.isdir(buffer_dir):
-            os.mkdir(buffer_dir)
         self.save_dir = save_dir
-        if not os.path.isdir(save_dir):
-            os.mkdir(save_dir)
+        if os.path.isdir(buffer_dir):
+            shutil.rmtree(buffer_dir)
+        os.mkdir(buffer_dir)
+        if os.path.isdir(save_dir):
+            shutil.rmtree(save_dir)
+        os.mkdir(save_dir)
+        
         self.key2info = {}
         self.user2thread = {}
 
@@ -41,6 +45,47 @@ class Chunck():
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.bind(('0.0.0.0', self.address[1]))
         self.sock.listen()
+
+        # heart beat用来确认服务器没有挂掉，也用来删除master没有了，但是chunck还保存着的文件
+        # 如果从缓冲区复制到存储区，到客户端想master报到前，发生了heart beat，很可能会把刚上传的文件给删了
+        # 因此采取一个策略：把多次heart beat master返回的文件信息存起来，检查如果多次heart beat都不存在的文件，才把它删掉
+        self.delete_check_time = 2  # 多少次
+        self.heart_beat_time = 10
+
+    def heart_beat(self):
+        print('Heart beat thread started.')
+        while True:
+            try:
+                time.sleep(self.heart_beat_time)
+                print('** Heart Beat **')
+                request = {'command': 'heart beat', 'address': self.address}
+                response = self.ask_master(request)
+                assert isinstance(response.get('response'), dict)
+                for my_key in self.key2info.keys():
+                    if my_key not in response.get('response'):
+                        if self.key2info[my_key].get('not exist time') == None:
+                            self.key2info[my_key]['not exist time'] = 1
+                        else:
+                            self.key2info[my_key]['not exist time'] += 1
+
+
+                # print('===========', self.key2info)
+                pop_key = []
+                for key in self.key2info.keys():
+                    if self.key2info[key].get('not exist time') != None:
+                        if self.key2info[key].get('not exist time') > self.delete_check_time:
+                            print('**** 文件%s将被删除，因为master中已经没有它的记录 ****'%key)
+                            for i in range(self.key2info.get(key).get('num_blocks')):
+                                saved_path = self.save_dir + key + '_' + str(i) + '.block'
+                                if os.path.isfile(saved_path):
+                                    os.remove(saved_path)
+                            pop_key.append(key)
+                for i in pop_key:
+                    self.key2info.pop(i)
+            except Exception as e:
+                print('heart beat thread:', str(e))
+                # raise e
+
     
     def run_server(self):
         print('Chunck server begins running.', ('0.0.0.0', self.address[1]))
@@ -49,6 +94,12 @@ class Chunck():
             return False
         print('Successfully join cluster.')
         print('Begin listening...')
+
+        # 创建心跳线程
+        hbt = threading.Thread(target=self.heart_beat)
+        hbt.setDaemon(True)
+        hbt.start()
+
         while True:
             try:
                 req_sock, req_address = self.sock.accept()
@@ -119,23 +170,20 @@ class Chunck():
         self.key2info[key] = {'num_blocks': num_blocks} 
         
         network.send_dict(sock, {'response': 'push success', 'num_blocks': num_blocks})
-
         
 
+        
+    def ask_master(self, request_dict):
+        '''
+        request_dict: {'command':'xxx', ...}
+        '''
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.connect(self.master_address)
+        network.send_dict(sock, request_dict)
+        response = network.recv_dict(sock)
+        sock.close()
+        return response
 
-    # def ask_master(self, request_dict):
-    #     '''
-    #     request_dict: {'command':'xxx', ...}
-    #     '''
-    #     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    #     sock.connect(self.master_address)
-    #     network.send_dict(sock, request_dict)
-    #     response = network.recv_dict(sock)
-    #     sock.close()
-    #     return response
-
-    def check_with_master(self):
-        pass
 
     @thread_wraper
     @sock_close_wraper
@@ -143,13 +191,6 @@ class Chunck():
         key = request_dict['key']
         num_blocks = request_dict['num_blocks']
         network.send_from_blocks_to_blocks(sock, self.save_dir+key, num_blocks)
-
-
-    def write(self):
-        pass
-
-    def delete_file(self):
-        pass
 
     def join_cluster(self):
         try:
@@ -165,9 +206,6 @@ class Chunck():
         except socket.timeout:
             sock.close()
 
-
-    def heart_beat(self):
-        pass
 
 def main():
     parser = argparse.ArgumentParser()

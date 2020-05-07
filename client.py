@@ -19,7 +19,7 @@ class Client():
     def run_gui(self):
         self.main_window = tk.Tk()
         self.main_window.title('GGFS(%s)'%(self.my_name))
-        self.main_window.geometry('300x400')
+        self.main_window.geometry('300x435')
         self.state_var = tk.StringVar()
         self.state_var.set('你好, %s'%(self.my_name))
         self.state_label = tk.Label(self.main_window, textvariable=self.state_var)
@@ -33,6 +33,9 @@ class Client():
         self.file_listbox.bind('<Double-Button-3>', self.right_double_click_download)
         # 绑定拖拽时间到上传功能
         windnd.hook_dropfiles(self.main_window, func=self.dropfile_push)
+
+        self.refresh_botton = tk.Button(self.main_window, text='刷新', command=self.refresh_file_listbox)
+        self.refresh_botton.place(x=125, y=400, width=50, height=27)
         
         self.main_window.mainloop()
 
@@ -80,17 +83,17 @@ class Client():
 
     def delete(self, key):
         self.state_var.set('Deleting %s in master'%key)
-        time.sleep(1.2)
+        time.sleep(0.2)
         key = self.my_name + '_' + key
         request = {'command': 'delete', 'key': key}
         response = self.ask_master(request)
         assert response.get('response') == 'deleted'
 
         self.state_var.set('Master deleted!')
-        time.sleep(1.2)
+        time.sleep(0.2)
 
         self.state_var.set('deleting chunck...')
-        time.sleep(1.2)
+        time.sleep(0.2)
 
         if response.get('addresses') != None:
             for i in response.get('addresses'):
@@ -116,7 +119,7 @@ class Client():
         try:
             # 先向master询问，向哪几台服务器写。如果已经有2台服务器有，则会多返回一台
             self.state_var.set('Begin pushing file and asking master')
-            time.sleep(1.2)
+            time.sleep(0.2)
             key = self.my_name + '_' + key
             request = {'command': 'push', 'key': key}
             response = self.ask_master(request)
@@ -129,7 +132,7 @@ class Client():
             # 多线程向chunck缓冲区发送数据
             self.state_var.set('uploading to chunck buffer')
             print('往这些chunck buffer上传文件中:', chunck_addresses)
-            time.sleep(1.2)
+            time.sleep(0.2)
             chunck_sock = []
             send_thread = []
             finish_flag = [False] * len(chunck_addresses)
@@ -161,13 +164,13 @@ class Client():
                 raise Exception('Some chuncks do not recieve successfully.')
 
             self.state_var.set('Successfully upload!')
-            time.sleep(1.2)
+            time.sleep(0.2)
 
             # 如果有重名，上传完缓冲区之后，向master确定，master把重名的记录删除。
             # 也就是说，如果上传缓冲区不成功，之前的记录是不会被去掉。但是成功之后，无论后面写入是否成功，之前的都没了
             if is_cover:
                 self.state_var.set('covering! deleting master record')
-                time.sleep(1.2)
+                time.sleep(0.2)
                 request = {'command':'delete', 'key': key}
                 response = self.ask_master(request)
                 assert response.get('response') == 'deleted'
@@ -175,7 +178,7 @@ class Client():
             # 等待发送完(如果有不行的，直接断开连接，chunck收到异常会清空缓冲区)，再发送确认写入命令
             # 等待写入成功回复（只要有成功写入就行，都不成功就断开吧。这个应该都会成功的，毕竟都发过去了）
             self.state_var.set('Confirming push with chunck...')
-            time.sleep(1.2)
+            time.sleep(0.2)
             confirm_thread = []
             confirm_return = []
             for i in chunck_sock:
@@ -195,13 +198,13 @@ class Client():
                     raise Exception('各个chunck的num_blocks不同')
 
             self.state_var.set('Confirmed.')
-            time.sleep(1.2)
+            time.sleep(0.2)
                 
             
             # 和master确认（如果不是全部写入成功，就把部分成功的告诉master，失败的也告诉，master后续处理。）
             # 等待master回复成功
             self.state_var.set('Confirmed push with master.')
-            time.sleep(1.2)
+            time.sleep(0.2)
 
             request = {'command': 'push finish', 'key': key,
                 'info':{'addresses': chunck_addresses, 'num_blocks': num_blocks}}
@@ -209,7 +212,7 @@ class Client():
             assert response.get('response') == 'push finish success'
 
             self.state_var.set('Successfully pushed!')
-            time.sleep(1.2)
+            time.sleep(0.2)
         except Exception as e:
             for i in chunck_sock:
                 i.close()
@@ -272,7 +275,7 @@ class Client():
         key: (str) file name
         '''
         state_var.set('Begin getting file and asking master:' + key)
-        time.sleep(1.2)
+        time.sleep(0.2)
         # state_var.set(str(123))
         key = self.my_name + '_' + key
         # 第一步，询问master存储的地址
@@ -287,7 +290,7 @@ class Client():
         # 第二步，向chunck取文件
         for i, chunck_add in enumerate(response['response']['addresses']):
             state_var.set('Begin getting file from '+str(chunck_add))
-            time.sleep(1.2)
+            time.sleep(0.2)
             try:
                 self.get_from_chunck(chunck_add, key, save_path, response['response']['num_blocks'], state_var=state_var)
                 state_var.set(('Successfully get file %s \nfrom chunck server '%(key)) + str(chunck_add))
@@ -346,7 +349,7 @@ def login_window():
     label = tk.Label(login, text='master ip')
     label.pack()
     ip_en = tk.Entry(login)
-
+    ip_en.insert(0, '127.0.0.1')
     ip_en.pack()
 
     label = tk.Label(login, text='master port')
